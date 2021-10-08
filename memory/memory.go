@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Clever/leakybucket"
+	"github.com/onthegit/leakybucket"
 )
 
 type bucket struct {
@@ -12,7 +12,7 @@ type bucket struct {
 	remaining uint
 	reset     time.Time
 	rate      time.Duration
-	mutex     sync.Mutex
+	mutex     *sync.Mutex
 }
 
 func (b *bucket) Capacity() uint {
@@ -47,22 +47,28 @@ func (b *bucket) Add(amount uint) (leakybucket.BucketState, error) {
 // Storage is a non thread-safe in-memory leaky bucket factory.
 type Storage struct {
 	buckets map[string]*bucket
+	mu      *sync.Mutex
 }
 
 // New initializes the in-memory bucket store.
 func New() *Storage {
 	return &Storage{
 		buckets: make(map[string]*bucket),
+		mu:      new(sync.Mutex),
 	}
 }
 
 // Create a bucket.
 func (s *Storage) Create(name string, capacity uint, rate time.Duration) (leakybucket.Bucket, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	b, ok := s.buckets[name]
 	if ok {
 		return b, nil
 	}
 	b = &bucket{
+		mutex:     new(sync.Mutex),
 		capacity:  capacity,
 		remaining: capacity,
 		reset:     time.Now().Add(rate),
@@ -70,4 +76,10 @@ func (s *Storage) Create(name string, capacity uint, rate time.Duration) (leakyb
 	}
 	s.buckets[name] = b
 	return b, nil
+}
+
+func (s *Storage) Remove(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.buckets, name)
 }
